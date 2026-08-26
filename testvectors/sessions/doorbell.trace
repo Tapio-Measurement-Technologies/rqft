@@ -1,0 +1,6 @@
+# rqft-session-trace-v1
+# name: doorbell
+# scenario: responder-role HELLO doorbell, controller HELLO_OK
+# columns: now_ms direction hex
+0 R>C 00030151010401010104020401057d01da4c00
+10 C>R 0003025101020101030204010105bd9ed61700

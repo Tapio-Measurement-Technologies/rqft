@@ -1,0 +1,262 @@
+# SPDX-FileCopyrightText: 2026 Tapio Measurement Technologies Oy
+# SPDX-License-Identifier: GPL-3.0-only
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure
+        run: >-
+          cmake -S c -B c/build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DRQFT_SANITIZE=ON
+          -DRQFT_WERROR=ON
+      - name: Build
+        run: cmake --build c/build
+      - name: Test
+        run: ctest --test-dir c/build --output-on-failure
+
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install
+        run: python -m pip install -e 'python[dev]'
+      - name: Type-check
+        if: matrix.python-version == '3.12'
+        run: python -m mypy --strict python/src/rqft
+      - name: Test
+        run: python -m pytest python/tests
+
+  interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python implementation
+        run: python -m pip install -e 'python[dev]'
+      - name: Configure C peer
+        run: >-
+          cmake -S c -B c/build
+          -DCMAKE_BUILD_TYPE=Debug
+          -DRQFT_BUILD_TESTS=OFF
+          -DRQFT_BUILD_INTEROP=ON
+      - name: Build C peer
+        run: cmake --build c/build --target c_peer
+      - name: Test C/Python interoperability
+        run: python -m pytest interop
+
+  packages:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package tools
+        run: python -m pip install build platformio setuptools-scm twine
+      - name: Resolve package version
+        id: release
+        shell: bash
+        run: |
+          tag=v0.0.0
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+          fi
+          version="$(python tools/release.py version --tag "$tag")"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Build Python distributions
+        run: python -m build --outdir python/dist python
+      - name: Check Python metadata
+        run: python -m twine check python/dist/*
+      - name: Check tagged Python version
+        if: github.ref_type == 'tag'
+        run: |
+          test -f \
+            "python/dist/rqft-${{ steps.release.outputs.version }}.tar.gz"
+          test -f \
+            "python/dist/rqft-${{ steps.release.outputs.version }}-py3-none-any.whl"
+      - name: Check Python archive contents
+        run: |
+          sdist="$(find python/dist -maxdepth 1 -name 'rqft-*.tar.gz' -print -quit)"
+          wheel="$(find python/dist -maxdepth 1 -name 'rqft-*.whl' -print -quit)"
+          test -n "$sdist"
+          test -n "$wheel"
+          tar -tzf "$sdist" > "$RUNNER_TEMP/python-sdist.txt"
+          IFS=/ read -r sdist_root _ < "$RUNNER_TEMP/python-sdist.txt"
+          grep -q "^${sdist_root}/LICENSE$" "$RUNNER_TEMP/python-sdist.txt"
+          grep -q "^${sdist_root}/README.md$" "$RUNNER_TEMP/python-sdist.txt"
+          if grep -q '/tests/' "$RUNNER_TEMP/python-sdist.txt"; then
+            echo "Python sdist unexpectedly contains repository-only tests"
+            exit 1
+          fi
+          unzip -l "$wheel" > "$RUNNER_TEMP/python-wheel.txt"
+          grep -Eq 'rqft-[^/]+\.dist-info/licenses/LICENSE' \
+            "$RUNNER_TEMP/python-wheel.txt"
+      - name: Prepare C release sources
+        run: >-
+          python tools/release.py prepare-c
+          --tag "${{ steps.release.outputs.tag }}"
+          --output "$RUNNER_TEMP/rqft-c-package"
+      - name: Pack PlatformIO library
+        run: >-
+          pio pkg pack "$RUNNER_TEMP/rqft-c-package"
+          --output
+          "$RUNNER_TEMP/rqft-platformio-${{ steps.release.outputs.version }}.tar.gz"
+      - name: Check PlatformIO archive contents
+        run: |
+          archive="$RUNNER_TEMP/rqft-platformio-${{ steps.release.outputs.version }}.tar.gz"
+          tar -tzf "$archive" \
+            > "$RUNNER_TEMP/platformio-package.txt"
+          grep -q '^LICENSE$' "$RUNNER_TEMP/platformio-package.txt"
+          grep -q '^README.md$' "$RUNNER_TEMP/platformio-package.txt"
+          grep -q '^VERSION$' "$RUNNER_TEMP/platformio-package.txt"
+          test "$(tar -xOf "$archive" VERSION)" = \
+            "${{ steps.release.outputs.version }}"
+          if grep -Eq '^(build[^/]*)/|^tests/' "$RUNNER_TEMP/platformio-package.txt"; then
+            echo "PlatformIO package contains excluded build or test files"
+            exit 1
+          fi
+      - name: Build and install packaged CMake library
+        run: |
+          mkdir "$RUNNER_TEMP/rqft-platformio"
+          tar -xzf \
+            "$RUNNER_TEMP/rqft-platformio-${{ steps.release.outputs.version }}.tar.gz" \
+            -C "$RUNNER_TEMP/rqft-platformio"
+          cmake -S "$RUNNER_TEMP/rqft-platformio" \
+            -B "$RUNNER_TEMP/rqft-package-build" \
+            -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/rqft-package-build"
+          cmake --install "$RUNNER_TEMP/rqft-package-build" \
+            --prefix "$RUNNER_TEMP/rqft-install"
+      - name: Test installed CMake package
+        run: |
+          cmake -S c/tests/package_consumer \
+            -B "$RUNNER_TEMP/rqft-consumer-build" \
+            -DCMAKE_PREFIX_PATH="$RUNNER_TEMP/rqft-install"
+          cmake --build "$RUNNER_TEMP/rqft-consumer-build"
+          "$RUNNER_TEMP/rqft-consumer-build/rqft_package_consumer"
+      - name: Prepare tagged release assets
+        if: github.ref_type == 'tag'
+        run: >-
+          python tools/release.py prepare-assets
+          --tag "${{ steps.release.outputs.tag }}"
+          --platformio-archive
+          "$RUNNER_TEMP/rqft-platformio-${{ steps.release.outputs.version }}.tar.gz"
+          --output release-dist
+      - name: Upload tagged release packages
+        if: github.ref_type == 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rqft-${{ steps.release.outputs.version }}
+          if-no-files-found: error
+          path: release-dist/
+
+  fuzz:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Configure fuzz build
+        run: >-
+          CC=clang CXX=clang++
+          cmake -S c -B c/build-fuzz
+          -DCMAKE_BUILD_TYPE=Debug
+          -DRQFT_BUILD_TESTS=OFF
+          -DRQFT_BUILD_INTEROP=OFF
+          -DRQFT_BUILD_FUZZ=ON
+      - name: Build fuzz target
+        run: cmake --build c/build-fuzz --target fuzz_frame
+      - name: Fuzz frame parser smoke
+        run: timeout 70s c/build-fuzz/fuzz_frame -max_total_time=60 -print_final_stats=1 -verbosity=0
+
+  release:
+    if: github.ref_type == 'tag'
+    needs: [c, python, interop, packages, fuzz]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download validated release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: rqft-${{ needs.packages.outputs.version }}
+          path: release-assets
+      - name: Verify release assets
+        env:
+          VERSION: ${{ needs.packages.outputs.version }}
+        run: |
+          test -f "release-assets/rqft-${VERSION}-py3-none-any.whl"
+          test -f "release-assets/rqft-${VERSION}.tar.gz"
+          test -f "release-assets/rqft-platformio-${VERSION}.tar.gz"
+          test -f release-assets/SHA256SUMS
+          cd release-assets
+          sha256sum --check SHA256SUMS
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.packages.outputs.version }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          "release-assets/rqft-${VERSION}-py3-none-any.whl"
+          "release-assets/rqft-${VERSION}.tar.gz"
+          "release-assets/rqft-platformio-${VERSION}.tar.gz"
+          "release-assets/SHA256SUMS"
+          --verify-tag
+          --generate-notes
+          --title "RQFT ${VERSION}"
+
+  soak:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: python -m pip install -e 'python[dev]'
+      - name: Seeded randomized soak
+        run: >-
+          RQFT_RUN_SOAK=1
+          RQFT_SOAK_SECONDS=600
+          RQFT_SOAK_SEED=0xD18
+          python -m pytest interop/test_soak.py -q

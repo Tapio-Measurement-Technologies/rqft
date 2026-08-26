@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: 2026 Tapio Measurement Technologies Oy
+# SPDX-License-Identifier: GPL-3.0-only
+
+[build-system]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rqft"
+dynamic = ["version"]
+description = "RQFT: robust file transfer over unreliable serial links (sans-io core + pyserial client)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
+authors = [
+    {name = "Tapio Measurement Technologies Oy"},
+]
+keywords = ["file-transfer", "serial", "protocol", "sans-io"]
+classifiers = [
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.urls]
+Repository = "https://github.com/Tapio-Measurement-Technologies/rqft"
+Issues = "https://github.com/Tapio-Measurement-Technologies/rqft/issues"
+Specification = "https://github.com/Tapio-Measurement-Technologies/rqft/blob/main/SPEC.md"
+
+[project.scripts]
+rqft-demo = "rqft.demo:main"
+
+[project.optional-dependencies]
+serial = ["pyserial>=3.5"]
+dev = ["pytest>=7", "hypothesis>=6", "pyserial>=3.5", "mypy>=1.8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+rqft = ["py.typed"]
+
+[tool.setuptools_scm]
+root = ".."
+fallback_version = "0.0.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.mypy]
+strict = true
+files = [
+    "$MYPY_CONFIG_FILE_DIR/src",
+    "$MYPY_CONFIG_FILE_DIR/tests",
+    "$MYPY_CONFIG_FILE_DIR/../interop",
+    "$MYPY_CONFIG_FILE_DIR/../tools",
+]
+mypy_path = ["$MYPY_CONFIG_FILE_DIR/../interop"]

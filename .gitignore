@@ -1,0 +1,12 @@
+build/
+c/build/
+c/build-*/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.hypothesis/
+dist/
+.venv/
+compile_commands.json
+rqft-local/

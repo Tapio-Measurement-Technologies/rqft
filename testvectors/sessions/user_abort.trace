@@ -1,0 +1,7 @@
+# rqft-session-trace-v1
+# name: user_abort
+# scenario: established session; responder host cancels with ABORT E_USER
+# columns: now_ms direction hex
+0 C>R 0003014201030101010302040105534189a900
+0 R>C 0003024201030101030204010105c337b58600
+10 R>C 00030542010606ee4dbcd600

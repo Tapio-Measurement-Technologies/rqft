@@ -1,0 +1,8 @@
+# rqft-session-trace-v1
+# name: doorbell_notify
+# scenario: doorbell establish followed by the responder's NOTIFY(SYNC_INCREMENTAL)
+# columns: now_ms direction hex
+0 R>C 00030151010401010104020401057d01da4c00
+10 C>R 0003025101020101030204010105bd9ed61700
+20 R>C 0003035101034101010105afcd279b00
+20 C>R 0004045101058d3d43da00

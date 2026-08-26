@@ -1,0 +1,8 @@
+[
+  {"name": "hello", "ftype": 1, "sid": 66, "seq": 0, "flags": 0, "payload_hex": "0101000002040100", "encoded_hex": "0003014201030101010402040105127092b000"},
+  {"name": "hello_ok", "ftype": 2, "sid": 66, "seq": 0, "flags": 0, "payload_hex": "0101000204010000", "encoded_hex": "0003024201030101040204010105f45d778700"},
+  {"name": "data_list_req_root_crc", "ftype": 3, "sid": 66, "seq": 7, "flags": 0, "payload_hex": "100100", "encoded_hex": "000403420703100105a520095900"},
+  {"name": "ack", "ftype": 4, "sid": 66, "seq": 8, "flags": 0, "payload_hex": "", "encoded_hex": "000404420805ed9be11500"},
+  {"name": "ack_nak", "ftype": 4, "sid": 66, "seq": 8, "flags": 1, "payload_hex": "", "encoded_hex": "0009044208017babe66200"},
+  {"name": "abort_timeout", "ftype": 5, "sid": 66, "seq": 0, "flags": 0, "payload_hex": "02", "encoded_hex": "00030542010602f789d1d100"}
+]

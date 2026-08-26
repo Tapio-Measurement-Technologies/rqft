@@ -1,0 +1,6 @@
+# rqft-session-trace-v1
+# name: abort
+# scenario: controller HELLO with no common version; responder ABORT E_VERSION
+# columns: now_ms direction hex
+0 C>R 0003014201030101010302040105534189a900
+0 R>C 000305420106014dd8d84800

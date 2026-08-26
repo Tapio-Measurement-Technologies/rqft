@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Tapio Measurement Technologies Oy
+# SPDX-License-Identifier: GPL-3.0-only
+
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/rqftTargets.cmake")
+check_required_components(rqft)

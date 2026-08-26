@@ -1,0 +1,32 @@
+{
+  "$schema": "https://raw.githubusercontent.com/platformio/platformio-core/develop/platformio/assets/schema/library.json",
+  "name": "rqft",
+  "version": "0.0.0",
+  "description": "RQFT: robust file transfer over unreliable serial links. C++17, no heap, non-blocking.",
+  "keywords": ["file-transfer", "serial", "protocol", "embedded"],
+  "homepage": "https://github.com/Tapio-Measurement-Technologies/rqft",
+  "authors": [
+    {
+      "name": "Tapio Measurement Technologies Oy",
+      "url": "https://tapiotechnologies.com",
+      "maintainer": true
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Tapio-Measurement-Technologies/rqft.git"
+  },
+  "license": "GPL-3.0-only",
+  "frameworks": "*",
+  "platforms": "*",
+  "headers": ["rqft/rqft.h"],
+  "export": {
+    "exclude": ["build*", "tests"]
+  },
+  "build": {
+    "srcDir": "src",
+    "includeDir": "include",
+    "flags": ["-std=gnu++17"],
+    "extraScript": "scripts/platformio_version.py"
+  }
+}
