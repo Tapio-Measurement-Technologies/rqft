@@ -269,6 +269,18 @@ timer is either sluggish or spuriously retransmits.
 
 - If a session is active and the **controller** has sent nothing for
   `T_PING` (2000 ms), it sends a PING message (§5.3) on the reliable stream.
+- The keepalive runs whether or not an operation is in flight, except
+  while a file stream is open or may be opening, because a PING that
+  reaches the peer inside a file stream is fatal (§5.3). The controller
+  MUST NOT send PING from a GET_REQ until it has processed the FILE_END
+  or ERR that ends that GET, nor from a PUT_REQ until it has sent the
+  PUT's FILE_END or the PUT has ended without one. It MUST send it at
+  every other point: between operations, while a LIST or DEL awaits its
+  reply, while a PUT source is still being hashed before PUT_REQ, and
+  after FILE_END while PUT_DONE is awaited. Hashing a large file for LIST
+  `want_crc` or for PUT can take longer than `T_DEAD` with nothing else
+  on the wire; the PING and its ACK and PONG keep both sides' idle
+  timers fed through it.
 - Any endpoint MUST terminate the session locally (best-effort
   `ABORT(E_TIMEOUT)`) after `T_DEAD` (10 000 ms) without receiving any valid
   in-session frame.
@@ -404,7 +416,10 @@ a simple sub-state machine.)
 Which entries appear (filtering, recursion) is host policy via the listing
 callback — not the library's business. If `want_crc` was set, the responder
 SHOULD compute per-file CRC32 incrementally (bounded work per poll) and set
-`eflags.crc_valid`; it MAY skip (crc_valid = 0). Files it cannot read are
+`eflags.crc_valid`; it MAY skip (crc_valid = 0). A responder MUST keep
+receiving frames between hashing steps and answer PING with PONG while it
+serves a LIST, so the controller's keepalive (§4.5) holds the session open
+however long hashing takes. Files it cannot read are
 skipped and SHOULD each be reported with an informational
 `ERR(E_FS_READ, ref = LIST_REQ)` interleaved with the entries (best-effort:
 the report MAY be dropped under transmit backpressure, and `LIST_END.count`

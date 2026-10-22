@@ -498,7 +498,7 @@ class Session:
             deadlines.append(self._last_hello_tx_ms + T_HELLO_MS)
         if self.state is SessionState.ACTIVE:
             deadlines.append(self._last_rx_ms + T_DEAD_MS)
-            if self.role is Role.CONTROLLER and self._op is None:
+            if self._keepalive_allowed():
                 deadlines.append(self._last_tx_ms + T_PING_MS)
         if self._link is not None:
             link_deadline = self._link.next_timeout()
@@ -558,23 +558,38 @@ class Session:
 
         T_DEAD without any valid in-session frame ends the session with
         a best-effort ABORT(E_TIMEOUT). Otherwise the controller sends a
-        PING after T_PING of outbound silence — suppressed while an
-        operation is in flight: the operation's own traffic keeps the
-        line alive, and a PING landing inside a peer file stream would
-        be an E_PROTO violation (SPEC.md section 5.3).
+        PING after T_PING of outbound silence whenever
+        _keepalive_allowed() says no file stream can be open.
         """
 
         if now_ms - self._last_rx_ms >= T_DEAD_MS:
             self._abort_session(AbortReason.E_TIMEOUT, events)
             return
-        if (
-            self.role is Role.CONTROLLER
-            and self._op is None
-            and now_ms - self._last_tx_ms >= T_PING_MS
-        ):
+        if self._keepalive_allowed() and now_ms - self._last_tx_ms >= T_PING_MS:
             self._ping_token += 1
             self._last_tx_ms = now_ms
             self._send_ctrl(Ping(self._ping_token), now_ms)
+
+    def _keepalive_allowed(self) -> bool:
+        """Whether the controller keepalive may send PING now (SPEC.md
+        section 4.5).
+
+        A PING that reaches the peer inside a file stream is an E_PROTO
+        violation (SPEC.md section 5.3), so it is held back from GET_REQ
+        until the GET ends, and from PUT_REQ until our FILE_END. At
+        every other point it runs, including while a LIST or DEL awaits
+        its reply and while a PUT source is hashed: those can outlast
+        T_DEAD on a large file with nothing else on the wire.
+        """
+
+        if self.role is not Role.CONTROLLER:
+            return False
+        op = self._op
+        if isinstance(op, _CtrlGet):
+            return False
+        if isinstance(op, _CtrlPut):
+            return op.phase in (_PutPhase.HASH, _PutPhase.AWAIT_DONE)
+        return True
 
     def _draw_sid(self) -> int:
         """Draw and validate a session id from the configured source."""
@@ -1316,10 +1331,11 @@ class Session:
         The file is hashed under the bounded per-poll budget, offered
         with PUT_REQ, and streamed once the responder accepts; the
         responder commits only after size and CRC verify (SPEC.md
-        section 5.4). Nothing is transmitted until handle_timeout()
+        section 5.4). PUT_REQ goes out only once handle_timeout()
         finishes the hash, so drive the operation with handle_timeout()
-        while work_pending() is true. Closed by PutDone or OpFailed,
-        and the session continues either way.
+        while work_pending() is true; keepalive PINGs keep the peer's
+        idle timer fed meanwhile (SPEC.md section 4.5). Closed by
+        PutDone or OpFailed, and the session continues either way.
 
         Args:
             path: Relative path of the file to upload.

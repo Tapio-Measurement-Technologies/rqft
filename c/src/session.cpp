@@ -1610,14 +1610,37 @@ void parser_event_thunk(void *user, const rqft_frame_event_t *event)
     on_frame(impl, &event->frame, impl.now_ms);
 }
 
+/** Whether the controller keepalive may send PING now (SPEC.md section
+ * 4.5).
+ *
+ * A PING that reaches the peer inside a file stream is an E_PROTO
+ * violation (SPEC.md section 5.3), so it is held back from GET_REQ until
+ * the GET ends, and from PUT_REQ until our FILE_END. At every other
+ * point it runs, including while a LIST or DEL awaits its reply and
+ * while a PUT source is hashed: those can outlast T_DEAD on a large
+ * file with nothing else on the wire.
+ */
+bool keepalive_allowed(const SessionStateImpl &impl)
+{
+    if (impl.config.role != RQFT_ROLE_CONTROLLER) {
+        return false;
+    }
+    if (impl.op == OpKind::CtrlGet) {
+        return false;
+    }
+    if (impl.op == OpKind::CtrlPut) {
+        return impl.ctrl_put.phase == PutPhase::Hash ||
+               impl.ctrl_put.phase == PutPhase::AwaitDone;
+    }
+    return true;
+}
+
 /** Run the keepalive and idle-death timers (SPEC.md section 4.5).
  *
  * T_DEAD without any valid in-session frame ends the session with a
  * best-effort ABORT(E_TIMEOUT). Otherwise the controller sends a PING
- * after T_PING of outbound silence — suppressed while an operation is
- * in flight: the operation's own traffic keeps the line alive, and a
- * PING landing inside a peer file stream would be an E_PROTO violation
- * (SPEC.md section 5.3).
+ * after T_PING of outbound silence whenever keepalive_allowed() says no
+ * file stream can be open.
  */
 void run_keepalive(SessionStateImpl &impl, uint32_t now_ms)
 {
@@ -1625,8 +1648,7 @@ void run_keepalive(SessionStateImpl &impl, uint32_t now_ms)
         abort_session(impl, RQFT_ABORT_E_TIMEOUT);
         return;
     }
-    if (impl.config.role != RQFT_ROLE_CONTROLLER || impl.op != OpKind::None ||
-        now_ms - impl.last_tx_ms < RQFT_T_PING_MS) {
+    if (!keepalive_allowed(impl) || now_ms - impl.last_tx_ms < RQFT_T_PING_MS) {
         return;
     }
     impl.ping_token++;
@@ -1756,7 +1778,7 @@ bool rqft_session_next_timeout(const rqft_session_t *session, uint32_t *deadline
             best = candidate;
         }
         found = true;
-        if (impl.config.role == RQFT_ROLE_CONTROLLER && impl.op == OpKind::None) {
+        if (keepalive_allowed(impl)) {
             candidate = impl.last_tx_ms + RQFT_T_PING_MS;
             if (candidate < best) {
                 best = candidate;

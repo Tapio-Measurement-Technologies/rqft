@@ -108,7 +108,12 @@ interop evidence names are pytest modules unless a specific test is named.
   seeding no samples is asserted at session level.
 - [x] **§4.5 keepalive and idle death.** Controller-only PING after 2000 ms,
   PONG echo, valid-frame idle reset, wrong-sid exclusion, and 10000 ms local
-  timeout are covered for both roles by `test_session_keepalive`.
+  timeout are covered for both roles by `test_session_keepalive`. The same
+  suite pins the operation phases: PING while LIST or DEL awaits its reply,
+  while a PUT source hashes, and while PUT_DONE is awaited; none from
+  GET_REQ or PUT_REQ until the stream closes. Slow-hash runs on a simulated
+  clock keep a LIST `want_crc` and a PUT alive through five times `T_DEAD`
+  of hashing.
 - [x] **§4.6 ABORT.** Typed reason codes, immediate peer termination,
   best-effort local timeout/user abort, host-initiated abort in both
   implementations (`rqft_session_abort()` / `Session.abort()`), clean
